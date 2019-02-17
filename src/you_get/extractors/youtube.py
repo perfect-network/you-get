@@ -41,6 +41,9 @@ class YouTube(VideoExtractor):
         # - https://www.youtube.com/yts/jsbin/player-da_DK-vflWlK-zq/base.js
         # - https://www.youtube.com/yts/jsbin/player-vflvABTsY/da_DK/base.js
         # - https://www.youtube.com/yts/jsbin/player-vfls4aurX/da_DK/base.js
+        # - https://www.youtube.com/yts/jsbin/player_ias-vfl_RGK2l/en_US/base.js
+        # - https://www.youtube.com/yts/jsbin/player-vflRjqq_w/da_DK/base.js
+        # - https://www.youtube.com/yts/jsbin/player_ias-vfl-jbnrr/da_DK/base.js
         def tr_js(code):
             code = re.sub(r'function', r'def', code)
             code = re.sub(r'(\W)(as|if|in|is|or)\(', r'\1_\2(', code)
@@ -56,13 +59,14 @@ class YouTube(VideoExtractor):
             return code
 
         js = js.replace('\n', ' ')
-        f1 = match1(js, r'\.set\(\w+\.sp,\(0,window\.encodeURIComponent\)\(([$\w]+)') or \
+        f1 = match1(js, r'\.set\(\w+\.sp,encodeURIComponent\(([$\w]+)') or \
+            match1(js, r'\.set\(\w+\.sp,\(0,window\.encodeURIComponent\)\(([$\w]+)') or \
             match1(js, r'\.set\(\w+\.sp,([$\w]+)\(\w+\.s\)\)') or \
             match1(js, r'"signature",([$\w]+)\(\w+\.\w+\)')
         f1def = match1(js, r'function %s(\(\w+\)\{[^\{]+\})' % re.escape(f1)) or \
                 match1(js, r'\W%s=function(\(\w+\)\{[^\{]+\})' % re.escape(f1))
         f1def = re.sub(r'([$\w]+\.)([$\w]+\(\w+,\d+\))', r'\2', f1def)
-        f1def = 'function %s%s' % (f1, f1def)
+        f1def = 'function main_%s%s' % (f1, f1def)  # prefix to avoid potential namespace conflict
         code = tr_js(f1def)
         f2s = set(re.findall(r'([$\w]+)\(\w+,\d+\)', f1def))
         for f2 in f2s:
@@ -79,7 +83,7 @@ class YouTube(VideoExtractor):
 
         f1 = re.sub(r'(as|if|in|is|or)', r'_\1', f1)
         f1 = re.sub(r'\$', '_dollar', f1)
-        code = code + 'sig=%s(s)' % f1
+        code = code + 'sig=main_%s(s)' % f1  # prefix to avoid potential namespace conflict
         exec(code, globals(), locals())
         return locals()['sig']
 
@@ -225,7 +229,11 @@ class YouTube(VideoExtractor):
 
         # YouTube Live
         if ytplayer_config and (ytplayer_config['args'].get('livestream') == '1' or ytplayer_config['args'].get('live_playback') == '1'):
-            hlsvp = ytplayer_config['args']['hlsvp']
+            if 'hlsvp' in ytplayer_config['args']:
+                hlsvp = ytplayer_config['args']['hlsvp']
+            else:
+                player_response= json.loads(ytplayer_config['args']['player_response'])
+                log.e('[Failed] %s' % player_response['playabilityStatus']['reason'], exit_code=1)
 
             if 'info_only' in kwargs and kwargs['info_only']:
                 return
